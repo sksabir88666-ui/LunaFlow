@@ -1,0 +1,210 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - Firebase Auth UID
+    //   - name: string (required, 1-100 chars) - User's full name
+    //   - age: number (optional, >= 0) - User's age
+    //   - weight: number (optional, >= 0) - Weight in kg
+    //   - height: number (optional, >= 0) - Height in cm
+    //   - bmi: number (optional, >= 0) - Body Mass Index
+    //   - cycleLength: number (optional, 1-100) - Average cycle length in days
+    //   - periodLength: number (optional, 1-30) - Average period duration in days
+    //   - sleepGoal: number (optional, >= 0) - Daily sleep goal in hours
+    //   - waterGoal: number (optional, >= 0) - Daily water goal in ml
+    //   - isCycleRegular: boolean (optional) - Cycle regularity status
+    //   - updatedAt: timestamp (optional)
+    //
+    // Collection: periods
+    // Document ID: {periodId}
+    // Fields:
+    //   - userId: string (required) - UID of the user
+    //   - startDate: timestamp (required) - Start date of the period
+    //   - endDate: timestamp (required) - End date of the period
+    //   - duration: number (required, >= 0) - Duration in days
+    //   - ovulationDate: timestamp (optional) - Predicted ovulation date
+    //   - notes: string (optional, < 1000 chars) - User notes
+    //
+    // Collection: blood_reports
+    // Document ID: {reportId}
+    // Fields:
+    //   - userId: string (required) - UID of the user
+    //   - testName: string (required, 1-100 chars) - Name of the blood test
+    //   - result: number (required) - Test result value
+    //   - unit: string (optional, 1-20 chars) - Unit of measurement
+    //   - normalRange: string (optional, 1-50 chars) - Normal range description
+    //   - status: string (optional, enum) - Normal, High, Low, Critical
+    //   - analysis: string (optional, < 2000 chars) - AI generated analysis
+    //   - symptomsAtTime: string (optional, < 1000 chars) - Symptoms reported
+    //   - date: timestamp (required) - Date of the report
+    //
+    // Collection: symptoms
+    // Document ID: {symptomId}
+    // Fields:
+    //   - userId: string (required) - UID of the user
+    //   - date: timestamp (required) - Date of the symptom log
+    //   - mood: string (required, enum) - Happy, Neutral, Sad, Anxious, Irritated
+    //   - energy: number (required, 1-5) - Energy level
+    //   - pain: number (required, 1-5) - Pain level
+    //   - flow: string (optional, enum) - None, Light, Medium, Heavy
+    //   - cramps: boolean (optional) - Presence of cramps
+    //   - headache: boolean (optional) - Presence of headache
+    //   - notes: string (optional, < 500 chars) - User notes
+    //
+    // Collection: daily_logs
+    // Document ID: {logId}
+    // Fields:
+    //   - userId: string (required) - UID of the user
+    //   - date: timestamp (required) - Date of the log
+    //   - weight: number (optional, >= 0) - Weight in kg
+    //   - sleepHours: number (optional, >= 0) - Sleep duration in hours
+    //   - waterIntake: number (optional, >= 0) - Water intake in ml
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "Sk.Sabir.88666@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'name']) &&
+             data.uid == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (!('age' in data) || (data.age is number && data.age >= 0)) &&
+             (!('weight' in data) || (data.weight is number && data.weight >= 0)) &&
+             (!('height' in data) || (data.height is number && data.height >= 0)) &&
+             (!('bmi' in data) || (data.bmi is number && data.bmi >= 0)) &&
+             (!('cycleLength' in data) || (data.cycleLength is number && data.cycleLength >= 1 && data.cycleLength <= 100)) &&
+             (!('periodLength' in data) || (data.periodLength is number && data.periodLength >= 1 && data.periodLength <= 30)) &&
+             (!('sleepGoal' in data) || (data.sleepGoal is number && data.sleepGoal >= 0)) &&
+             (!('waterGoal' in data) || (data.waterGoal is number && data.waterGoal >= 0)) &&
+             (!('isCycleRegular' in data) || (data.isCycleRegular is bool)) &&
+             (!('manualNextPeriod' in data) || (data.manualNextPeriod is timestamp)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 200000));
+    }
+
+    function isValidPeriod(data) {
+      return hasRequiredFields(['userId', 'startDate', 'endDate', 'duration']) &&
+             data.userId == request.auth.uid &&
+             data.startDate is timestamp &&
+             data.endDate is timestamp &&
+             data.duration is number && data.duration >= 0 &&
+             (!('ovulationDate' in data) || data.ovulationDate is timestamp) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000));
+    }
+
+    function isValidBloodReport(data) {
+      return hasRequiredFields(['userId', 'testName', 'type', 'date']) &&
+             data.userId == request.auth.uid &&
+             data.testName is string && data.testName.size() > 0 && data.testName.size() <= 100 &&
+             data.type in ['Blood', 'USG', 'Follicular', 'Semen', 'Urine'] &&
+             data.date is timestamp &&
+             (!('result' in data) || data.result == null || data.result is number) &&
+             (!('unit' in data) || (data.unit is string && data.unit.size() <= 100)) &&
+             (!('normalRange' in data) || (data.normalRange is string && data.normalRange.size() <= 100)) &&
+             (!('status' in data) || (data.status is string)) &&
+             (!('analysis' in data) || (data.analysis is string && data.analysis.size() <= 5000)) &&
+             (!('findings' in data) || data.findings == null || (data.findings is string && data.findings.size() <= 5000)) &&
+             (!('follicleSize' in data) || data.follicleSize == null || data.follicleSize is number) &&
+             (!('endometrialThickness' in data) || data.endometrialThickness == null || data.endometrialThickness is number) &&
+             (!('ovarySide' in data) || data.ovarySide == null || data.ovarySide in ['Left', 'Right', 'Both']) &&
+             (!('symptomsAtTime' in data) || (data.symptomsAtTime is string && data.symptomsAtTime.size() <= 2000));
+    }
+
+    function isValidSymptom(data) {
+      return hasRequiredFields(['userId', 'date', 'mood', 'energy', 'pain']) &&
+             data.userId == request.auth.uid &&
+             data.date is timestamp &&
+             data.mood in ['Happy', 'Neutral', 'Sad', 'Anxious', 'Irritated'] &&
+             data.energy is number && data.energy >= 1 && data.energy <= 5 &&
+             data.pain is number && data.pain >= 1 && data.pain <= 5 &&
+             (!('flow' in data) || (data.flow in ['None', 'Light', 'Medium', 'Heavy'])) &&
+             (!('cramps' in data) || (data.cramps is bool)) &&
+             (!('headache' in data) || (data.headache is bool)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 500));
+    }
+
+    function isValidDailyLog(data) {
+      return hasRequiredFields(['userId', 'date']) &&
+             data.userId == request.auth.uid &&
+             data.date is timestamp &&
+             (!('weight' in data) || (data.weight is number && data.weight >= 0)) &&
+             (!('sleepHours' in data) || (data.sleepHours is number && data.sleepHours >= 0)) &&
+             (!('waterIntake' in data) || (data.waterIntake is number && data.waterIntake >= 0));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /periods/{periodId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidPeriod(request.resource.data);
+      allow update: if isAuthenticated() && isDocOwner() && isValidPeriod(request.resource.data);
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+
+    match /blood_reports/{reportId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidBloodReport(request.resource.data);
+      allow update: if isAuthenticated() && isDocOwner() && isValidBloodReport(request.resource.data);
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+
+    match /symptoms/{symptomId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidSymptom(request.resource.data);
+      allow update: if isAuthenticated() && isDocOwner() && isValidSymptom(request.resource.data);
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+
+    match /daily_logs/{logId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidDailyLog(request.resource.data);
+      allow update: if isAuthenticated() && isDocOwner() && isValidDailyLog(request.resource.data);
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+  }
+}

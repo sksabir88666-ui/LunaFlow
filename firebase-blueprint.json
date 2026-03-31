@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user's personal and health information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "description": "User's full name" },
+        "age": { "type": "number", "description": "User's age" },
+        "weight": { "type": "number", "description": "Weight in kg" },
+        "height": { "type": "number", "description": "Height in cm" },
+        "bmi": { "type": "number", "description": "Body Mass Index" },
+        "cycleLength": { "type": "number", "description": "Average cycle length in days" },
+        "periodLength": { "type": "number", "description": "Average period duration in days" },
+        "photoURL": { "type": "string", "description": "Base64 encoded profile photo" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name"]
+    },
+    "Period": {
+      "title": "Period Entry",
+      "description": "Records of menstrual cycles.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "duration": { "type": "number", "description": "Duration in days" },
+        "ovulationDate": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
+      },
+      "required": ["userId", "startDate", "endDate"]
+    },
+    "BloodReport": {
+      "title": "Blood Test Report",
+      "description": "Stores blood test results and AI analysis.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "testName": { "type": "string" },
+        "result": { "type": "number" },
+        "unit": { "type": "string" },
+        "normalRange": { "type": "string" },
+        "status": { "type": "string", "enum": ["Normal", "High", "Low", "Critical"] },
+        "analysis": { "type": "string", "description": "AI generated analysis" },
+        "symptomsAtTime": { "type": "string", "description": "Symptoms experienced around the time of the test" },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "testName", "result", "date"]
+    },
+    "Symptom": {
+      "title": "Daily Symptom",
+      "description": "Daily tracking of mood, energy, and pain.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "mood": { "type": "string", "enum": ["Happy", "Neutral", "Sad", "Anxious", "Irritated"] },
+        "energy": { "type": "number", "description": "Energy level 1-5" },
+        "pain": { "type": "number", "description": "Pain level 1-5" },
+        "notes": { "type": "string" }
+      },
+      "required": ["userId", "date", "mood", "energy", "pain"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile document"
+    },
+    "/periods/{periodId}": {
+      "schema": "Period",
+      "description": "Menstrual cycle records"
+    },
+    "/blood_reports/{reportId}": {
+      "schema": "BloodReport",
+      "description": "Blood test reports"
+    },
+    "/symptoms/{symptomId}": {
+      "schema": "Symptom",
+      "description": "Daily symptom records"
+    }
+  }
+}
